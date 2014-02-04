@@ -5,20 +5,60 @@ import java.util.Arrays;
 
 import me.eighth.suitcase.Suitcase;
 
-import org.bukkit.command.CommandSender;
+import org.bukkit.OfflinePlayer;
 
 public class SuitcasePermission {
-	// default permissions for users if mecanics.op-permissions is enabled
-	private ArrayList<String> defaultPermissions = (ArrayList<String>) Arrays.asList("suitcase.help", "suitcase.info", "suitcase.rate");
 	
-	// returns true if sender has permission, otherwise false
-	public boolean hasPermission (CommandSender sender, String permission) {
-		if (Suitcase.configKeys.getBoolean("mechanics.op-permissions")) {
-			if (sender.isOp()) return true; // OPs have all permissions for suitcase if mechanics.op-permissions is enabled
-			else if (defaultPermissions.contains(permission)) return true; // check if user has default permission
-			else return false; // user doesn't have permission
+	/** Suitcase instance */
+	private Suitcase plugin;
+	
+	/** Stores default permissions for players if mechanics.op-permissions is enabled */
+	private ArrayList<String> defaultPermissions;
+	
+	/**
+	 * Handles player and console permissions
+	 * @param plugin Instance of Suitcase
+	 */
+	public SuitcasePermission(Suitcase plugin) {
+		this.plugin = plugin;
+		
+		// load default permissions
+		defaultPermissions = new ArrayList<String>(Arrays.asList("help", "broadcast", "rate"));
+	}
+	
+	/**
+	 * Checks if player or console has permission to a Suitcase action
+	 * @param sender Command sender or target
+	 * @param permission Suitcase permission
+	 */
+	public boolean hasPermission(String sender, String permission) {
+		if (sender.equals("CONSOLE")) { // console has permission to all commands
+			return true;
 		}
-		else if (sender.hasPermission(permission) || sender.hasPermission("suitcase.*") || sender.hasPermission("*")) return true; // check regular permissions (including super permissions)
-		else return false;
+		else {
+			OfflinePlayer player = plugin.getServer().getOfflinePlayer(sender); // we need permissions for offline players as well
+			if (player != null) {
+				if (plugin.cfg.getBoolean("mechanics.op-permissions")) {
+					if (player.isOp()) {
+						return true; // OPs have all permissions for suitcase if mechanics.op-permissions is enabled
+					}
+					else if (defaultPermissions.contains(permission)) {
+						return true; // check if user has default permission
+					}
+					else {
+						return false; // regular user doesn't have permission
+					}
+				}
+				else if (plugin.getServer().getPluginManager().getPermissionSubscriptions("suitcase." + permission).contains(sender)) {
+					return true; // get player's permission
+				}
+				else {
+					return false;
+				}
+			}
+			else {
+				return false; // player not found
+			}
+		}
 	}
 }

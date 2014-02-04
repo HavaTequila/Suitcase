@@ -3,150 +3,282 @@ package me.eighth.suitcase;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import me.eighth.suitcase.config.SuitcaseConfig;
 import me.eighth.suitcase.config.SuitcaseEvent;
 import me.eighth.suitcase.config.SuitcaseMessage;
-import me.eighth.suitcase.event.SuitcaseCommand;
+import me.eighth.suitcase.event.SuitcaseBlockListener;
+import me.eighth.suitcase.event.SuitcaseCommandExecutor;
+import me.eighth.suitcase.event.SuitcasePlayerListener;
+import me.eighth.suitcase.log.SuitcaseConnector;
 import me.eighth.suitcase.log.SuitcaseDatabase;
-import me.eighth.suitcase.log.SuitcaseFile;
+import me.eighth.suitcase.log.SuitcaseYMLFile;
 import me.eighth.suitcase.util.SuitcaseConsole;
-import me.eighth.suitcase.util.SuitcaseConsole.actionType;
+import me.eighth.suitcase.util.SuitcaseFile;
 import me.eighth.suitcase.util.SuitcasePermission;
+import me.eighth.suitcase.util.SuitcaseConsole.Action;
 
 import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class Suitcase extends JavaPlugin {
+	
+	/** Current version name */
+	public final String name = "Leather";
+	
+	/** Prefix for console notifications */
+	public final String pluginTag = "[Suitcase] ";
+	
+	/** Prefix for player commands */
+	public final String playerTag = "[PLAYER_COMMAND] ";
+	
+	/** Prefix for console commands */
+	public final String consoleTag = "[CONSOLE_COMMAND] ";
+	
+	// Suitcase classes
+	public final SuitcaseConfig cfg = new SuitcaseConfig(this);
+	public final SuitcaseEvent event = new SuitcaseEvent(this);
+	public final SuitcaseMessage msg = new SuitcaseMessage(this);
+	
+	public final SuitcaseCommandExecutor command = new SuitcaseCommandExecutor(this);
+	public final SuitcasePlayerListener player = new SuitcasePlayerListener(this);
+	public final SuitcaseBlockListener block = new SuitcaseBlockListener(this);
+	
+	public final SuitcaseConnector con = new SuitcaseConnector(this);
+	public final SuitcaseDatabase db = new SuitcaseDatabase(this);
+	public final SuitcaseYMLFile yml = new SuitcaseYMLFile(this);
+	
+	private final SuitcaseConsole console = new SuitcaseConsole(this);
+	private final SuitcaseFile file = new SuitcaseFile(this);
+	private final SuitcasePermission perm = new SuitcasePermission(this);
 
-	// config
-	public static SuitcaseConfig cfConfig = new SuitcaseConfig();
-	public static SuitcaseEvent cfEvent = new SuitcaseEvent();
-	public static SuitcaseMessage cfMessage = new SuitcaseMessage();
-	
-	// event
-	public static SuitcaseCommand evCommand = new SuitcaseCommand();
-	
-	// log
-	public static SuitcaseDatabase lgDatabase = new SuitcaseDatabase();
-	public static SuitcaseFile lgFile = new SuitcaseFile();
-	
-	// util
-	public static SuitcaseConsole utConsole = new SuitcaseConsole();
-	public static SuitcasePermission utPermission = new SuitcasePermission();
-	
-	// define other variables
-	public static Suitcase plugin;
-	public static PluginDescriptionFile pdf = plugin.getDescription();
-	public static FileConfiguration configKeys = null;
-	public static FileConfiguration messagesKeys = null;
-	public static Map<String, ArrayList<String>> commandAliases = new HashMap<String, ArrayList<String>>();
+	@Override
+	public void onEnable() {
+		// set command executors and event listeners
+		getCommand("suitcase").setExecutor(command);
+		
+		// register event
+		PluginManager manager = getServer().getPluginManager();
+		manager.registerEvents(player, this);
+		manager.registerEvents(block, this);
+		
+		// load and check configuration
+		if (!cfg.init() || !msg.init() || !event.init() || !con.init()) {
+			disable();
+			return;
+		}
+		
+		// add online players
+		con.registerAll();
+		
+		// enabling finished, send to log
+		log(Action.PLUGIN_ENABLE);
+	}
 	
 	@Override
 	public void onDisable() {
-		// plugin unload
-		utConsole.sendAction(actionType.PLUGIN_DISABLE_START);
-
-		// save and dispose configuration
-		if (!cfConfig.freeConfig()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_DISABLE_ERROR, (ArrayList<String>) Arrays.asList("freeConfigError"));
-			disable();
-			return;
-		}
-		else if (!cfMessage.freeMessages()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_DISABLE_ERROR, (ArrayList<String>) Arrays.asList("freeMessagesError"));
-			disable();
-			return;
-		}
-		/*
-		else if (!lgConnector.freeLog()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_DISABLE_ERROR, (ArrayList<String>) Arrays.asList("freeConnectorError"));
-			disable();
-			return;
-		}
-		*/
-		else {		
-			// disabling finished, send to log
-			utConsole.sendAction(actionType.PLUGIN_DISABLE_FINISH);
-		}
+		// save and dispose configuration in reverse order, ignore errors and continue disabling
+		con.free();
+		event.free();
+		msg.free();
+		cfg.free();
+		
+		// disabling finished, send to log
+		log(Action.PLUGIN_DISABLE);
 	}
 	
-	@Override
-	public void onEnable() {
-		// plugin startup
-		utConsole.sendAction(actionType.PLUGIN_ENABLE_START);
-		
-		// set commands and aliases
-		getCommand("suitcase").setExecutor(evCommand);
-		commandAliases.put("help", (ArrayList<String>) Arrays.asList("help", "h", "?"));
-		commandAliases.put("info", (ArrayList<String>) Arrays.asList("info", "i", "about", "a"));
-		commandAliases.put("rate", (ArrayList<String>) Arrays.asList("rate", "r", "vote", "v"));
-		commandAliases.put("rate.positive", (ArrayList<String>) Arrays.asList("positive", "p", "good", "g", "+"));
-		commandAliases.put("rate.negative", (ArrayList<String>) Arrays.asList("negative", "n", "bad", "b", "-"));
-		commandAliases.put("warn", (ArrayList<String>) Arrays.asList("warn", "w", "!"));
-		commandAliases.put("warn.forgive", (ArrayList<String>) Arrays.asList("forgive", "f"));
-		commandAliases.put("reload", (ArrayList<String>) Arrays.asList("reload"));
-		
-		// load and check configuration
-		if (!cfConfig.initConfig()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_ENABLE_ERROR, (ArrayList<String>) Arrays.asList("initConfigError"));
-			disable();
-			return;
-		}
-		else if (!cfMessage.initMessages()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_ENABLE_ERROR, (ArrayList<String>) Arrays.asList("initMessagesError"));
-			disable();
-			return;
-		}
-		/*
-		else if (!lgConnector.initLog()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_ENABLE_ERROR, (ArrayList<String>) Arrays.asList("initConnectorError"));
-			disable();
-			return;
-		}
-		*/
-		else {		
-			// enabling finished, send to log
-			utConsole.sendAction(actionType.PLUGIN_ENABLE_FINISH);
-		}
+	/**
+	 * Sends a debug message to console
+	 * @param arguments Debug information
+	 */
+	public boolean d(String...arguments) {
+		return log(Action.DEBUG, arguments);
 	}
 	
-	// reload plugin (user command)
-	public static void reload() {
-		
-		// plugin reload
-		utConsole.sendAction(actionType.PLUGIN_RELOAD_START);
-		
-		// reload configuration
-		if (!cfConfig.reloadConfig()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_RELOAD_ERROR, (ArrayList<String>) Arrays.asList("reloadConfigError"));
-			disable();
-			return;
+	/**
+	 * Gets string from ArrayList and removes brackets
+	 * @param list An ArrayList of Strings to be converted to a single String
+	 * @param separator Set an item separator
+	 */
+	public static String getStringFromList(List<String> list, String separator) {
+		return getStringFromList(new ArrayList<String>(list), separator);
+	}
+	
+	/**
+	 * Gets string from ArrayList and removes brackets
+	 * @param list An ArrayList of Strings to be converted to a single String
+	 * @param separator Set an item separator
+	 */
+	public static String getStringFromList(ArrayList<String> list, String separator) {
+		return list.toString().replaceAll("^\\[|\\]$", "").replaceAll(", ", separator);
+	}
+	
+	/**
+	 * Removes Strings from an ArrayList
+	 * @param defaults ArrayList to remove Strings from
+	 * @param remove Strings to be removed
+	 */
+	public static ArrayList<String> removeStringsFromList(String[] defaults, String...remove) {
+		return removeStringsFromList(new ArrayList<String>(Arrays.asList(defaults)), remove);
+	}
+	
+	/**
+	 * Removes Strings from an ArrayList
+	 * @param defaults ArrayList to remove Strings from
+	 * @param remove Strings to be removed
+	 */
+	public static ArrayList<String> removeStringsFromList(Set<String> defaults, String...remove) {
+		return removeStringsFromList(new ArrayList<String>(Arrays.asList(defaults.toArray(new String[0]))), remove);
+	}
+	
+	/**
+	 * Removes Strings from an ArrayList
+	 * @param defaults ArrayList to remove Strings from
+	 * @param remove Strings to be removed
+	 */
+	public static ArrayList<String> removeStringsFromList(List<String> defaults, String...remove) {
+		return removeStringsFromList(new ArrayList<String>(defaults), remove);
+	}
+	
+	/**
+	 * Removes Strings from an ArrayList
+	 * @param defaults ArrayList to remove Strings from
+	 * @param remove Strings to be removed
+	 */
+	public static ArrayList<String> removeStringsFromList(ArrayList<String> defaults, String...remove) {
+		for (String defaultsString : defaults) {
+			for (String removeString : remove) {
+				if (defaultsString.equals(removeString)) {
+					defaults.remove(defaultsString);
+					break;
+				}
+			}
 		}
-		else if (!cfMessage.reloadMessages()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_RELOAD_ERROR, (ArrayList<String>) Arrays.asList("reloadMessagesError"));
-			disable();
-			return;
-		}
-		/*
-		else if (!lgConnector.reloadLog()) {
-			Suitcase.utConsole.sendAction(actionType.PLUGIN_RELOAD_ERROR, (ArrayList<String>) Arrays.asList("reloadConnectorError"));
-			disable();
-			return;
-		}
-		*/
-		else {		
+		return defaults;
+	}
+	
+	/** Reloads plugin */
+	public boolean reload() {
+		// reload settings and connector
+		if (cfg.reload() && msg.reload() && event.reload() && con.reload()) {
 			// reloading finished, send to log
-			utConsole.sendAction(actionType.PLUGIN_RELOAD_FINISH);
+			log(Action.PLUGIN_RELOAD);
+			return true;
+		}
+		else {
+			return false;
+		}
+		
+	}
+	
+	/** Resets configuration and player data */
+	public boolean reset() {
+		// reset player ratings
+		if (cfg.reset() && msg.reset() && event.reset() && con.reset()) {
+			log(Action.RESET);
+			return true;
+		}
+		else {
+			return false;
 		}
 	}
 	
-	// disable plugin due to internal error
-	public static void disable() {
-		PluginManager pm = plugin.getServer().getPluginManager();
-		pm.disablePlugin(plugin);
+	/** Disables plugin due to an internal error */
+	public void disable() {
+		setEnabled(false);
+	}
+
+	
+	/**
+	 * Logs an action to console
+	 * @param action Action type to be logged
+	 */
+	public boolean log(Action action) {
+		return log(action, new ArrayList<String>());
+	}
+	
+	/**
+	 * Logs an action to console
+	 * @param action Action type to be logged
+	 * @param arguments Action arguments
+	 */
+	public boolean log(Action action, String...arguments) {
+		return log(action, new ArrayList<String>(Arrays.asList(arguments)));
+	}
+
+	/**
+	 * Logs an action to console
+	 * @param action Action type to be logged
+	 * @param arguments Action arguments
+	 */
+	public boolean log(Action action, ArrayList<String> arguments) {
+		return console.log(action, arguments);
+	}
+	
+	/**
+	 * Loads a file and merges its value with its defaults
+	 * @param filename File to be loaded
+	 */
+	public boolean load(String filename) {
+		return load(filename, new HashMap<String, Object>());
+	}
+	
+	/**
+	 * Loads a file and merges its value with its defaults
+	 * @param filename File to be loaded
+	 * @param defaults Path keys and values
+	 */
+	public boolean load(String filename, FileConfiguration defaults) {
+		return load(filename, defaults, true);
+	}
+	
+	/**
+	 * Loads a file and merges its value with its defaults
+	 * @param filename File to be loaded
+	 * @param defaults Path keys and values
+	 */
+	public boolean load(String filename, Map<String, Object> defaults) {
+		return load(filename, defaults, true);
+	}
+	
+	/**
+	 * Loads a file and merges its value with its defaults
+	 * @param filename File to be loaded
+	 * @param defaults Path keys and values
+	 * @param optional Keep redundant keys and hide console messages
+	 */
+	public boolean load(String filename, FileConfiguration defaults, boolean optional) {
+		Map<String, Object> defaultsMap = new HashMap<String, Object>();
+		for (String key : defaults.getKeys(true)) {
+			if (!defaults.isConfigurationSection(key)) {
+				d(key, defaults.get(key).toString());
+				defaultsMap.put(key, defaults.get(key));
+			}
+		}
+		return load(filename, defaultsMap, optional);
+	}
+
+	/**
+	 * Loads a file and merges its value with its defaults
+	 * @param filename File to be loaded
+	 * @param defaults Path keys and values
+	 * @param optional Keep redundant keys and hide console messages
+	 */
+	public boolean load(String filename, Map<String, Object> defaults, boolean optional) {
+		return file.load(filename, defaults, optional);
+	}
+	
+	
+	/**
+	 * Checks if player or console has permission to a Suitcase action
+	 * @param sender Command sender or target
+	 * @param permission Suitcase permission
+	 */
+	public boolean hasPermission(String sender, String permission) {
+		return perm.hasPermission(sender, permission);
 	}
 }
